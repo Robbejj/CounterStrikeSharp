@@ -1,7 +1,7 @@
 name: Build & Publish
 
 env:
-  BUILD_TYPE: Debug
+  BUILD_TYPE: Release
 
 # Remove default permissions of GITHUB_TOKEN for security
 # https://docs.github.com/en/actions/using-jobs/assigning-permissions-to-jobs

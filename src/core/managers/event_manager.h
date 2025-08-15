@@ -87,6 +87,7 @@ class EventManager : public IGameEventListener2, public GlobalClass
     void OnAllInitialized_Post() override;
     void OnStartup() override;
     void OnGameLoopInitialized() override;
+    void OnLevelEnd() override;
 
     // IGameEventListener2
     void FireGameEvent(IGameEvent* pEvent) override;
@@ -103,6 +104,8 @@ class EventManager : public IGameEventListener2, public GlobalClass
     std::stack<EventHook*> m_EventStack;
     std::stack<IGameEvent*> m_EventCopies;
     std::stack<PendingEventHook> m_PendingHooks;
+
+    bool m_bInTeardown = false;
 };
 
 } // namespace counterstrikesharp

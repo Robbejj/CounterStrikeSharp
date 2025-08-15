@@ -220,6 +220,9 @@ bool CounterStrikeSharpMMPlugin::Unload(char* error, size_t maxlen)
                            &CounterStrikeSharpMMPlugin::Hook_StartupServer, true);
     SH_REMOVE_HOOK_ID(g_iLoadEventsFromFileId);
 
+    // Ensure managers clean up before callbacks are released
+    CALL_GLOBAL_LISTENER(OnShutdown());
+
     globals::callbackManager.ReleaseCallback(on_activate_callback);
     globals::callbackManager.ReleaseCallback(on_metamod_all_plugins_loaded_callback);
 
@@ -311,7 +314,11 @@ int CounterStrikeSharpMMPlugin::Hook_LoadEventsFromFile(const char* filename, bo
     RETURN_META_VALUE(MRES_IGNORED, 0);
 }
 
-void CounterStrikeSharpMMPlugin::OnLevelShutdown() {}
+void CounterStrikeSharpMMPlugin::OnLevelShutdown()
+{
+    // Engine-level map end: perform early teardown to avoid post-event calls to stale callbacks
+    CALL_GLOBAL_LISTENER(OnLevelEnd());
+}
 
 bool CounterStrikeSharpMMPlugin::Pause(char* error, size_t maxlen) { return true; }
 

@@ -65,10 +65,47 @@ void EventManager::OnAllInitialized_Post()
 
 void EventManager::OnShutdown()
 {
+    m_bInTeardown = true;
     SH_REMOVE_HOOK(IGameEventManager2, FireEvent, globals::gameEventManager, SH_MEMBER(this, &EventManager::OnFireEvent), false);
     SH_REMOVE_HOOK(IGameEventManager2, FireEvent, globals::gameEventManager, SH_MEMBER(this, &EventManager::OnFireEventPost), true);
 
     globals::gameEventManager->RemoveListener(this);
+
+    // Release callbacks and clear hooks
+    for (auto& [name, hook] : m_hooksMap)
+    {
+        if (!hook) continue;
+        if (hook->m_pPreHook)
+        {
+            globals::callbackManager.ReleaseCallback(hook->m_pPreHook);
+            hook->m_pPreHook = nullptr;
+        }
+        if (hook->m_pPostHook)
+        {
+            globals::callbackManager.ReleaseCallback(hook->m_pPostHook);
+            hook->m_pPostHook = nullptr;
+        }
+        delete hook;
+    }
+    m_hooksMap.clear();
+
+    // Free any duplicated events
+    while (!m_EventCopies.empty())
+    {
+        if (auto* ev = m_EventCopies.top())
+        {
+            globals::gameEventManager->FreeEvent(ev);
+        }
+        m_EventCopies.pop();
+    }
+
+    while (!m_EventStack.empty()) m_EventStack.pop();
+}
+
+void EventManager::OnLevelEnd()
+{
+    // Treat as shutdown due to engine teardown ordering changes
+    OnShutdown();
 }
 
 void EventManager::FireGameEvent(IGameEvent* pEvent) {}
@@ -188,6 +225,10 @@ bool EventManager::UnhookEvent(const char* szName, CallbackT fnCallback, bool bP
 
 bool EventManager::OnFireEvent(IGameEvent* pEvent, bool bDontBroadcast)
 {
+    if (m_bInTeardown)
+    {
+        RETURN_META_VALUE(MRES_IGNORED, true);
+    }
     if (!pEvent)
     {
         RETURN_META_VALUE(MRES_IGNORED, false);
@@ -246,11 +287,20 @@ bool EventManager::OnFireEvent(IGameEvent* pEvent, bool bDontBroadcast)
 
 bool EventManager::OnFireEventPost(IGameEvent* pEvent, bool bDontBroadcast)
 {
+    if (m_bInTeardown)
+    {
+        RETURN_META_VALUE(MRES_IGNORED, true);
+    }
     if (!pEvent)
     {
         RETURN_META_VALUE(MRES_IGNORED, false);
     }
 
+    if (m_EventStack.empty())
+    {
+        CSSHARP_CORE_WARN("OnFireEventPost: Event stack empty; skipping post callbacks");
+        RETURN_META_VALUE(MRES_IGNORED, true);
+    }
     auto pHook = m_EventStack.top();
 
     if (pHook)
@@ -261,6 +311,12 @@ bool EventManager::OnFireEventPost(IGameEvent* pEvent, bool bDontBroadcast)
         {
             // VPROF_BUDGET("CS#::OnFireEventPost", "CS# Event Hooks");
 
+            if (m_EventCopies.empty())
+            {
+                CSSHARP_CORE_WARN("OnFireEventPost: Event copies stack empty for event '{}'; skipping post callbacks", pEvent->GetName());
+                m_EventStack.pop();
+                RETURN_META_VALUE(MRES_IGNORED, true);
+            }
             auto pEventCopy = m_EventCopies.top();
             CSSHARP_CORE_TRACE("Pushing event `{}` pointer: {}, dont broadcast: {}, post: {}", pEventCopy->GetName(), (void*)pEventCopy,
                                bDontBroadcast, true);
